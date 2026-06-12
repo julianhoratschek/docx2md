@@ -7,6 +7,7 @@ import re
 import zipfile
 import sys
 
+
 class ClosingState(IntFlag):
     Opening     = 0b00
     Closing     = 0b01
@@ -37,6 +38,7 @@ class StyledSection:
 class DocxDocument:
     def __init__(self):
         self.xml            : str                       = ""
+
         self.tag_pattern    : re.Pattern[str]           = re.compile(
                 r"<(?P<closing>/)?" + 
                 r"(?P<tag>[\w:_\d]+)" +
@@ -54,24 +56,27 @@ class DocxDocument:
         self.tag            : Tag                       = Tag()
 
         self.style_stack    : list[StyledSection]       = []
-        self.style          : Styling                   = Styling.NoStyle
+
+
+    @property
+    def style(self) -> Styling:
+        """Recalculate complete style stack"""
+
+        result = Styling.NoStyle
+
+        for sect in self.style_stack:
+            result |= sect.style
+
+        return result
+    
+
+    @property
+    def style_tag(self) -> Tag:
+        return self.style_stack[-1].tag
 
 
     def push_style(self, style: Styling):
         self.style_stack[-1].style |= style
-        self.style |= style
-
-
-    def pop_styled_section(self):
-        # TODO: This is not correct
-        #   Either work with counters or re-calculate style stack
-
-        # Remove Section
-        self.style_stack.pop()
-        self.style = Styling.NoStyle
-
-        for sect in self.style_stack:
-            self.style |= sect .style
 
 
     def write(self, file_name: Path | str):
@@ -80,17 +85,19 @@ class DocxDocument:
 
 
     def get_content(self) -> str:
+        """Get complete text between <w:t> and </w:t>"""
+
         begin = self.tag_match.end()
         if not self.next_tag():
-            print("[!] Unexpected End Of File, expected </w:t>")
+            print(f"[!] {begin}: Unexpected End Of File, expected </w:t>")
             return ""
 
         if self.tag.name != "w:t":
-            print("[!] Unexpected closing Tag, expected </w:t>")
+            print(f"[!] {begin}: Unexpected closing Tag, expected </w:t>")
             return ""
 
         if not self.tag.closing_state:
-            print("[!] Unexpected opening tag <w:t>")
+            print(f"[!] {begin}: Unexpected opening tag <w:t>")
             return ""
 
         end = self.tag_match.start()
@@ -98,52 +105,83 @@ class DocxDocument:
 
     
     def apply_style(self, text: str) -> str:
-        if Styling.Bold in self.style:
+        """Change `text` to represent current styling in markdown"""
+
+        style = self.style
+
+        if Styling.Bold in style:
             text = f"**{text}**"
-        if Styling.Italic in self.style:
+
+        if Styling.Italic in style:
             text = f"*{text}*"
-        if Styling.Underline in self.style:
+
+        if Styling.Underline in style:
             text = f"<u>{text}</u>"
-        if Styling.Striked in self.style:
+
+        if Styling.Striked in style:
             text = f"~~{text}~~"
-        if Styling.Highlight in self.style:
+
+        if Styling.Highlight in style:
             text = f"=={text}=="
+
         return text
 
 
     def convert_tag(self):
+        """Converts the current `self.tag` into markdown and saves it into
+        `self.output`. <w:t> tags content will be read completely."""
+
+        # Test for elements that can contain styling hints
         if self.tag.name in ("w:p", "w:r"):
-            if self.tag.closing_state:
-                if self.tag.name == self.style_stack[-1].tag.name:
-                    self.pop_styled_section()
-                else:
-                    print(f"[!] Unexpected closing tag {self.tag.name}, expected {self.style_stack[-1].tag.name}")
-                    return
-            else:
+
+            # Opening tag
+            if not self.tag.closing_state:
                 self.style_stack.append(StyledSection(self.tag))
 
+            # Closing tag
+            elif self.style_stack and self.tag.name == self.style_tag.name:
+                self.style_stack.pop()
+
+            else:
+                err_msg = f"[!] {self.tag_match.start()}: Unexpected closing tag {self.tag.name}"
+                if self.style_stack:
+                    err_msg += f", expected {self.style_tag.name}"
+                print(err_msg)
+                return
+
+        # Test for style hints
+
         styles = {
-            "w:b": Styling.Bold,
-            "w:i": Styling.Italic,
-            "w:u": Styling.Underline,
-            "w:strike": Styling.Striked,
-            "w:highlight": Styling.Highlight
+            "w:b"           : Styling.Bold,
+            "w:i"           : Styling.Italic,
+            "w:u"           : Styling.Underline,
+            "w:strike"      : Styling.Striked,
+            "w:highlight"   : Styling.Highlight
         }
 
         if self.tag.name in styles:
-            self.push_style(styles[self.tag.name])
+            if self.style_stack:
+                self.style_stack[-1].style |= styles[self.tag.name]
+            else:
+                print(f"[!] {self.tag_match.start()}: Unexpected styling-tag")
             return
+
+        # Test all other tags
                 
         match self.tag.name:
+            # Insert paragraph after w:p element
             case "w:p" if self.tag.closing_state:
                 self.output += "\n\n"
 
+            # Insert line break
             case "w:br":
                 self.output += "\\\n"
 
+            # Insert content at beginning of w:t
             case "w:t" if not self.tag.closing_state:
                 self.output += self.apply_style(self.get_content())
 
+            # Insert list bullets
             # TODO: Numerical lists
             case "w:listPr" | "w:numPr" if self.tag.closing_state:
                 self.output += "- "
@@ -152,7 +190,6 @@ class DocxDocument:
                 try:
                     lvl = int(self.tag.attr["w:val"])
                     self.output += "\t" * lvl
-                # TODO: handle
                 except ValueError:
                     print("[!] Expected numerical indent value for list")
                 except KeyError:
@@ -163,23 +200,26 @@ class DocxDocument:
                 self.in_header = True
                 self.col_count = 0
 
-            # TODO: p is no newline
-            case "w:tc":
+            # Insert | on opening tags
+            case "w:tc" if not self.tag.closing_state:
                 self.output += "|"
-                if self.in_header and self.tag.closing_state:
+                if self.in_header:
                     self.col_count += 1
 
+            # Insert last col | and newline on closing tr
             case "w:tr" if self.tag.closing_state:
-                self.output += "\n"
+                self.output += "|\n"
                 if self.in_header:
                     self.in_header = False
-                    self.output += "|" + "---|" * self.col_count
+                    self.output += "|" + ("---|" * self.col_count) + "\n"
 
             case _:
                 pass
 
 
     def get_tag(self):
+        """Reads the current `self.tag_match` into `self.tag`"""
+
         closing_state = ClosingState.Opening
 
         if self.tag_match["closing"]:
@@ -197,10 +237,11 @@ class DocxDocument:
             attr_list,
             closing_state)
 
-        # print(f"{'/' if self.tag.closing_state else ' '}{self.tag.name}")
-
 
     def next_tag(self) -> bool:
+        """Increments internal tag-iterator. Sets `self.tag_match` to current
+        tag and reads it into `self.tag`"""
+
         try:
             self.tag_match = next(self.iter)
         except StopIteration:
@@ -211,6 +252,8 @@ class DocxDocument:
 
 
     def load(self, file_name: str | Path):
+        """Reads complete docx-file and converts it into markdown"""
+
         try:
             with zipfile.ZipFile(file_name, 'r') as archive:
                 with archive.open("word/document.xml") as fl:
@@ -224,10 +267,8 @@ class DocxDocument:
             print(f"[!] File {file_name} does not seem to be DOCX")
             return
 
-        # with Path(file_name).open("r") as fl:
-        #     self.xml = "".join(fl.readlines()[2:])
-
         self.iter = self.tag_pattern.finditer(self.xml)
+        self.output = ""
 
         while self.next_tag():
             self.convert_tag()
@@ -237,7 +278,7 @@ if __name__ == "__main__":
     doc = DocxDocument()
 
     if len(sys.argv) < 2:
-        print("Usage: docx2md <file.docx> [out.md]")
+        print("Usage: python docx2md.py <file.docx> [out.md]")
         exit(0)
 
     file_name = Path(sys.argv[1])
