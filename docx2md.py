@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Literal, NamedTuple
+from typing import NamedTuple, override
 from collections.abc import Iterator
 from enum import IntFlag
 from dataclasses import dataclass
@@ -31,33 +31,30 @@ class Styling(IntFlag):
     Striked     = 0b01000
     Highlight   = 0b10000
 
-    def wrap(self, text: str, tp: str = 'md') -> str:
-        if tp not in ('md', 'html'):
-            tp = 'md'
+    def wrap(self, text: str, style_mapping: dict[Styling, tuple[str, str]]) -> str:
+        styles = STYLE_DEFAULT | style_mapping
 
         for style in self:
-            b, e = STYLE_STR[tp][style]
+            b, e = styles[style]
             text = f"{b}{text}{e}"
 
         return text
 
 
-STYLE_STR = {
-    "html": {
-        Styling.Bold: ("<b>", "</b>"),
-        Styling.Italic: ("<i>", "</i>"),
-        Styling.Underline: ("<u>", "</u>"),
-        Styling.Striked: ("<s>", "</s>"),
-        Styling.Highlight: ("<mark>", "</mark>") 
-    },
+STYLE_DEFAULT = {
+    Styling.Bold: ("**", "**"),
+    Styling.Italic: ("_", "_"),
+    Styling.Underline: ("<u>", "</u>"),
+    Styling.Striked: ("~~", "~~"),
+    Styling.Highlight: ("==", "==") 
+}
 
-    "md": {
-        Styling.Bold: ("**", "**"),
-        Styling.Italic: ("_", "_"),
-        Styling.Underline: ("<u>", "</u>"),
-        Styling.Striked: ("~~", "~~"),
-        Styling.Highlight: ("==", "==") 
-    }
+STYLE_TAGS = {
+    "w:b"           : Styling.Bold,
+    "w:i"           : Styling.Italic,
+    "w:u"           : Styling.Underline,
+    "w:strike"      : Styling.Striked,
+    "w:highlight"   : Styling.Highlight
 }
 
 
@@ -68,9 +65,12 @@ class StyledSection:
 
 
 class TagConverter:
+
     def __init__(self, owner: DocxDocument):
-        self.owner      : DocxDocument          = owner
-        self.style_stack: list[StyledSection]   = []
+        self.owner          : DocxDocument                      = owner
+        self.style_stack    : list[StyledSection]               = []
+        self.style_mapping  : dict[Styling, tuple[str, str]]    = STYLE_DEFAULT
+
 
     @property
     def style(self) -> Styling:
@@ -81,18 +81,7 @@ class TagConverter:
         return result
 
 
-class TagMdConverter(TagConverter):
-    def __init__(self, owner: DocxDocument):
-        super().__init__(owner)
-
-        self.in_header: bool = False
-        self.col_count: int = 0
-
-
-    def convert(self, tag: Tag):
-        """Converts the current `self.tag` into markdown and saves it into
-        `self.output`. <w:t> tags content will be read completely."""
-
+    def process_style_stack(self, tag: Tag) -> bool: 
         # Test for elements that can contain styling hints
         if tag.name in ("w:p", "w:r"):
 
@@ -109,23 +98,41 @@ class TagMdConverter(TagConverter):
                 if self.style_stack:
                     err_msg += f", expected {self.style_stack[-1].tag.name}"
                 self.owner.error(err_msg)
-                return
+                return False
 
-        # Test for style hints
+        return True
 
-        styles = {
-            "w:b"           : Styling.Bold,
-            "w:i"           : Styling.Italic,
-            "w:u"           : Styling.Underline,
-            "w:strike"      : Styling.Striked,
-            "w:highlight"   : Styling.Highlight
-        }
 
-        if tag.name in styles:
+    def find_style_tag(self, tag: Tag) -> bool:
+        if tag.name in STYLE_TAGS:
             if self.style_stack:
-                self.style_stack[-1].style |= styles[tag.name]
+                self.style_stack[-1].style |= STYLE_TAGS[tag.name]
             else:
                 self.owner.error("Unexpected styling-tag")
+            return True
+
+        return False
+
+    def convert(self, tag: Tag): ...
+
+    def get_result(self) -> str: ...
+
+
+class TagMdConverter(TagConverter):
+    def __init__(self, owner: DocxDocument):
+        super().__init__(owner)
+
+        self.in_header: bool    = False
+        self.col_count: int     = 0
+        self.output   : str     = ""
+
+
+    @override
+    def convert(self, tag: Tag):
+        if not self.process_style_stack(tag):
+            return
+
+        if self.find_style_tag(tag):
             return
 
         # Test all other tags
@@ -133,33 +140,30 @@ class TagMdConverter(TagConverter):
         match tag.name:
             # Insert paragraph after w:p element
             case "w:p" if tag.closing_state:
-                return "\n\n"
+                self.output += "\n\n"
 
             # Insert line break
             case "w:br":
-                return "\\\n"
+                self.output += "\\\n"
 
             # Insert content at beginning of w:t
             case "w:t" if not tag.closing_state:
-                return self.style.wrap(
-                    self.owner.get_content(),
-                    self.owner.output_type)
+                self.output += self.style.wrap(
+                    self.owner.get_content(), self.style_mapping)
 
             # Insert list bullets
-            # TODO: Numerical lists
             case "w:listPr" | "w:numPr" if tag.closing_state:
-                return "- "
+                self.output += "- "
 
             case "w:ilvl":
                 try:
                     lvl = int(tag.attr["w:val"])
-                    return "\t" * lvl
+                    self.output += "\t" * lvl
                 except ValueError:
                     self.owner.error("Expected numerical indent value for list")
                 except KeyError:
                     self.owner.error("Expected w:val in w:ilvl")
 
-            # TODO: Table as html
             case "w:tblHeader":
                 self.in_header = True
                 self.col_count = 0
@@ -168,7 +172,7 @@ class TagMdConverter(TagConverter):
             case "w:tc" if not tag.closing_state:
                 if self.in_header:
                     self.col_count += 1
-                return "|"
+                self.output += "|"
 
             # Insert last col | and newline on closing tr
             case "w:tr" if tag.closing_state:
@@ -176,11 +180,187 @@ class TagMdConverter(TagConverter):
                 if self.in_header:
                     self.in_header = False
                     res += "|" + ("---|" * self.col_count) + "\n"
-                return res
+                self.output += res
+
+            case _: pass
+
+    @override
+    def get_result(self) -> str:
+        return self.output
+
+
+@dataclass
+class HtmlTag:
+    name: str
+    children: list[HtmlTag | HtmlContent]
+    parent: HtmlTag | None
+
+
+@dataclass
+class HtmlContent:
+    content: str
+    parent: HtmlTag
+
+
+class TagHtmlConverter(TagConverter):
+    def __push_child(self, name: str):
+        tag = HtmlTag(name, [], self.html_head)
+        self.html_head.children.append(tag)
+        self.html_head = tag
+
+
+    # def __push_sibling(self, name: str):
+    #     if (parent := self.html_head.parent) is None:
+    #         return
+    #     tag = HtmlTag(name, [], parent)
+    #     parent.children.append(tag)
+        # self.html_head = tag
+
+
+    def __pop_child(self, name: str):
+        if (parent := self.html_head.parent) is None:
+            self.owner.error("Cannot ascent over root node")
+            return
+
+        if parent.name != name:
+            self.owner.error(f"Unexpected closing tag {parent.name}, expected {name}")
+            return
+
+        self.html_head = parent
+
+
+    def __push_content(self, text: str):
+        if (parent := self.html_head.parent) is None:
+            self.owner.error("Cannot public content under root node")
+            return
+        content = HtmlContent(text, parent)
+        self.html_head.children.append(content)
+
+
+    def __init__(self, owner: DocxDocument):
+        super().__init__(owner)
+
+        self.in_header  : bool  = False
+        self.html_tree  : HtmlTag = HtmlTag("body", [], None)
+        self.html_head  : HtmlTag = self.html_tree
+
+        self.style_mapping: dict[Styling, tuple[str, str]] = {
+            Styling.Bold        : ("<b>", "</b>"),
+            Styling.Italic      : ("<i>", "</i>"),
+            Styling.Underline   : ("<u>", "</u>"),
+            Styling.Striked     : ("<s>", "</s>"),
+            Styling.Highlight   : ("<mark>", "</mark>") 
+        }
+
+
+    @override
+    def convert(self, tag: Tag):
+        if not self.process_style_stack(tag):
+            return
+
+        if self.find_style_tag(tag):
+            return
+
+        # Test all other tags
+                
+        match tag.name:
+            # Insert paragraph after w:p element
+            case "w:p":
+                if not tag.closing_state:
+                    self.__push_child("p")
+
+                elif self.html_head.name == "li":
+                    self.__pop_child("li")
+                    # TODO: This is bad
+                    self.__pop_child("ul")
+
+                else:
+                    self.__pop_child("p")
+
+            # Insert line break
+            # case "w:br":
+            #     self.__push_sibling("br/")
+
+            # Insert content at beginning of w:t
+            case "w:t" if not tag.closing_state:
+                self.__push_content(
+                    self.style.wrap(
+                        self.owner.get_content(), self.style_mapping))
+
+            # Insert list bullets
+            case "w:listPr" | "w:numPr" if tag.closing_state:
+                if self.html_head.name != "p":
+                    self.owner.error("Expected <p> as root for lists")
+                    return
+
+                if self.html_head.parent is None:
+                    self.owner.error("Cannot insert list at root")
+                    return
+
+                # Exchange <p> with <ul> if not inside list yet
+                if self.html_head.parent.name != "ul":
+                    self.html_head.name = "ul"
+                    self.__push_child("li")
+
+                else:
+                    self.html_head.name = "li"
+
+            # case "w:ilvl":
+            #     try:
+            #         lvl = int(tag.attr["w:val"])
+            #         return "\t" * lvl
+            #     except ValueError:
+            #         self.owner.error("Expected numerical indent value for list")
+            #     except KeyError:
+            #         self.owner.error("Expected w:val in w:ilvl")
+
+            case "w:tbl":
+                if tag.closing_state:
+                    self.__pop_child("table")
+                else:
+                    self.__push_child("table")
+
+            case "w:tblHeader":
+                self.in_header = True
+
+            case "w:tc":
+                s = "h" if self.in_header else "d"
+                if tag.closing_state:
+                    self.__pop_child(f"t{s}")
+                else:
+                    self.__push_child(f"t{s}")
+
+            case "w:tr":
+                if tag.closing_state:
+                    self.__pop_child("tr")
+                    self.in_header = False
+                else:
+                    self.__push_child("tr")
 
             case _:
                 pass
-        return ""
+
+
+    def print_tag(self, tag: HtmlTag | HtmlContent) -> str:
+        match tag:
+            case HtmlContent():
+                return tag.content
+
+            case HtmlTag():
+                if tag.name[-1] == "/":
+                    return f"<{tag.name}>"
+
+                return (
+                    f"<{tag.name}>" +
+                    "".join(self.print_tag(child) for child in tag.children) +
+                    f"</{tag.name}>")
+
+    @override
+    def get_result(self) -> str:
+        return "".join(
+            self.print_tag(child) for child in self.html_tree.children)
+
+
 
 
 class DocxDocument:
@@ -215,6 +395,7 @@ class DocxDocument:
 
         return True
 
+
     def get_content(self) -> str:
         """Get complete text between <w:t> and </w:t>"""
 
@@ -235,100 +416,7 @@ class DocxDocument:
         return self.xml[begin:end]
 
 
-    def __convert_tag(self):
-        """Converts the current `self.tag` into markdown and saves it into
-        `self.output`. <w:t> tags content will be read completely."""
-
-        # Test for elements that can contain styling hints
-        if self.tag.name in ("w:p", "w:r"):
-
-            # Opening tag
-            if not self.tag.closing_state:
-                self.style_stack.append(StyledSection(self.tag))
-
-            # Closing tag
-            elif self.style_stack and self.tag.name == self.style_stack[-1].tag.name:
-                self.style_stack.pop()
-
-            else:
-                err_msg = f"Unexpected closing tag {self.tag.name}"
-                if self.style_stack:
-                    err_msg += f", expected {self.style_stack[-1].tag.name}"
-                self.error(err_msg)
-                return
-
-        # Test for style hints
-
-        styles = {
-            "w:b"           : Styling.Bold,
-            "w:i"           : Styling.Italic,
-            "w:u"           : Styling.Underline,
-            "w:strike"      : Styling.Striked,
-            "w:highlight"   : Styling.Highlight
-        }
-
-        if self.tag.name in styles:
-            if self.style_stack:
-                self.style_stack[-1].style |= styles[self.tag.name]
-            else:
-                self.error("Unexpected styling-tag")
-            return
-
-        # Test all other tags
-                
-        match self.tag.name:
-            # Insert paragraph after w:p element
-            case "w:p" if self.tag.closing_state:
-                self.output += "\n\n"
-
-            # Insert line break
-            case "w:br":
-                self.output += "\\\n"
-
-            # Insert content at beginning of w:t
-            case "w:t" if not self.tag.closing_state:
-                # self.output += self.__apply_style(self.__get_content())
-                self.output += self.style.wrap(
-                    self.__get_content(),
-                    self.output_type)
-
-            # Insert list bullets
-            # TODO: Numerical lists
-            case "w:listPr" | "w:numPr" if self.tag.closing_state:
-                self.output += "- "
-
-            case "w:ilvl":
-                try:
-                    lvl = int(self.tag.attr["w:val"])
-                    self.output += "\t" * lvl
-                except ValueError:
-                    self.error("Expected numerical indent value for list")
-                except KeyError:
-                    self.error("Expected w:val in w:ilvl")
-
-            # TODO: Table as html
-            case "w:tblHeader":
-                self.in_header = True
-                self.col_count = 0
-
-            # Insert | on opening tags
-            case "w:tc" if not self.tag.closing_state:
-                self.output += "|"
-                if self.in_header:
-                    self.col_count += 1
-
-            # Insert last col | and newline on closing tr
-            case "w:tr" if self.tag.closing_state:
-                self.output += "|\n"
-                if self.in_header:
-                    self.in_header = False
-                    self.output += "|" + ("---|" * self.col_count) + "\n"
-
-            case _:
-                pass
-
-
-    def __init__(self, output_type: Literal["md", "html"] = "md"):
+    def __init__(self):
         self.xml            : str                       = ""
 
         self.tag_pattern    : re.Pattern[str]           = re.compile(
@@ -339,22 +427,16 @@ class DocxDocument:
         self.attr_pattern   : re.Pattern[str]           = re.compile(
                 r'(?P<name>[\w\d_:]+)="(?P<value>[^"]*)"')
 
-        self.output         : str                       = ""
-        self.in_header      : bool                      = False
-        self.col_count      : int                       = 0
-
         self.iter           : Iterator[re.Match[str]]   = iter(())
         self.tag            : Tag                       = Tag()
 
-        self.style_stack    : list[StyledSection]       = []
-        self.output_type    : Literal["md", "html"]     = output_type if output_type in ("md", "html") else "md"
-
-
+        # self.style_stack    : list[StyledSection]       = []
+        self.converter      : TagConverter              = TagMdConverter(self)
 
 
     def write(self, file_name: Path | str):
         with Path(file_name).open("w+") as fl:
-            fl.write(self.output)
+            fl.write(self.converter.get_result())
 
 
     def load(self, file_name: str | Path):
@@ -374,14 +456,13 @@ class DocxDocument:
             return
 
         self.iter = self.tag_pattern.finditer(self.xml)
-        self.output = ""
 
         while self.__next_tag():
-            self.__convert_tag()
+            self.converter.convert(self.tag)
 
 
 if __name__ == "__main__":
-    doc = DocxDocument("html")
+    doc = DocxDocument()
 
     if len(sys.argv) < 2:
         print("Usage: python docx2md.py <file.docx> [out.md]")
