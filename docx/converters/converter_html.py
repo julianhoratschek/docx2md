@@ -5,37 +5,31 @@ from ..tag import Tag
 from ..style import Styling, STYLE_TAGS
 from .converter import DocxProtocol, TagConverter
 
+
 @dataclass
 class HtmlTag:
-    name: str
+    name    : str
     children: list[HtmlTag | HtmlContent]
-    parent: HtmlTag | None
+    parent  : HtmlTag | None
 
 
 @dataclass
 class HtmlContent:
     content: str
-    parent: HtmlTag
+    parent : HtmlTag
 
 
 class TagHtmlConverter(TagConverter):
     def __push_child(self, name: str):
         tag = HtmlTag(name, [], self.__html_head)
+
         self.__html_head.children.append(tag)
         self.__html_head = tag
 
 
-    # def __push_sibling(self, name: str):
-    #     if (parent := self.html_head.parent) is None:
-    #         return
-    #     tag = HtmlTag(name, [], parent)
-    #     parent.children.append(tag)
-        # self.html_head = tag
-
-
     def __pop_child(self, name: str):
         if (parent := self.__html_head.parent) is None:
-            return self.owner.error("Cannot ascent over root node")
+            return self.owner.error("Cannot ascend over root node")
 
         if self.__html_head.name != name:
             return self.owner.error(f"Unexpected closing tag {self.__html_head.name}, expected {name}")
@@ -54,10 +48,10 @@ class TagHtmlConverter(TagConverter):
     def __init__(self, owner: DocxProtocol):
         super().__init__(owner)
 
-        self.__in_header    : bool    = False
-        self.__in_list      : bool    = False
-        self.__html_tree    : HtmlTag = HtmlTag("body", [], None)
-        self.__html_head    : HtmlTag = self.__html_tree
+        self.__in_header  : bool    = False
+        self.__in_list    : bool    = False
+        self.__html_tree  : HtmlTag = HtmlTag("body", [], None)
+        self.__html_head  : HtmlTag = self.__html_tree
 
         self.extension    : str     = ".html"
         self.style_mapping: dict[Styling, tuple[str, str]] = {
@@ -70,23 +64,22 @@ class TagHtmlConverter(TagConverter):
 
 
     def __is_list(self) -> bool:
-        if not self.owner.next_tag():
-            return False
-
-        if self.owner.tag.name != "w:pPr":
+        if not self.owner.next_tag() \
+           or self.owner.tag.name != "w:pPr":
             return False
 
         while self.owner.next_tag() \
               and (tag := self.owner.tag).name != "w:numPr":
 
+            # We found the end of w:pPr without encountering w:numPr
             if tag.name == "w:pPr" and tag.closing_state:
                 return False
 
+            # Still process style tags
             if tag.name in STYLE_TAGS:
                 self.convert_style_tag(tag)
 
         return True
-
 
 
     @override
@@ -97,10 +90,8 @@ class TagHtmlConverter(TagConverter):
         if tag.name in STYLE_TAGS:
             return self.convert_style_tag(tag)
 
-        # Test all other tags
-                
         match tag.name:
-            # Insert paragraph after w:p element
+            # Insert paragraph or unordered list
             case "w:p":
                 if not tag.closing_state:
                     if self.__is_list():
@@ -123,33 +114,13 @@ class TagHtmlConverter(TagConverter):
                 else:
                     self.__pop_child("p")
 
-            # Insert line break
-            # case "w:br":
-            #     self.__push_sibling("br/")
-
             # Insert content at beginning of w:t
             case "w:t" if not tag.closing_state:
                 self.__push_content(
                     self.style.wrap(
                         self.owner.get_content(), self.style_mapping))
 
-            # Insert list bullets
-            # case "w:listPr" | "w:numPr" if tag.closing_state:
-            #     if self.__html_head.name != "p":
-            #         self.owner.error("Expected <p> as root for lists")
-            #         return
-            #
-            #     if self.__html_head.parent is None:
-            #         self.owner.error("Cannot insert list at root")
-            #         return
-            #
-            #     # Exchange <p> with <ul> if not inside list yet
-            #     if self.__html_head.parent.name != "ul":
-            #         self.__html_head.name = "ul"
-            #         self.__push_child("li")
-            #
-            #     else:
-            #         self.__html_head.name = "li"
+            # TODO: ul levels
 
             # case "w:ilvl":
             #     try:
@@ -170,11 +141,11 @@ class TagHtmlConverter(TagConverter):
                 self.__in_header = True
 
             case "w:tc":
-                s = "h" if self.__in_header else "d"
+                s = "th" if self.__in_header else "td"
                 if tag.closing_state:
-                    self.__pop_child(f"t{s}")
+                    self.__pop_child(s)
                 else:
-                    self.__push_child(f"t{s}")
+                    self.__push_child(s)
 
             case "w:tr":
                 if tag.closing_state:
@@ -196,12 +167,25 @@ class TagHtmlConverter(TagConverter):
                 if tag.name[-1] == "/":
                     return f"<{tag.name}>"
 
-                return (
-                    f"<{tag.name}>" +
-                    "".join(self.__print_tag(child) for child in tag.children) +
-                    f"</{tag.name}>")
+                return f"""
+        <{tag.name}>
+            {"".join(self.__print_tag(child) for child in tag.children)}
+        </{tag.name}>"""
 
     @override
     def get_result(self) -> str:
-        return "".join(
-            self.__print_tag(child) for child in self.__html_tree.children)
+        return f"""
+<!DOCTYPE html>
+<html>
+    <head>
+        <link rel="stylesheet" href="{self.owner.css_path.absolute()}" />
+    </head>
+
+    <body>
+        <div class="page">
+            {"".join(self.__print_tag(child)
+            for child in self.__html_tree.children)}
+        </div>
+    </body>
+</html>
+"""

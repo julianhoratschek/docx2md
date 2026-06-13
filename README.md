@@ -19,7 +19,7 @@ This project distinguishes itself by directly parsing the internal XML structure
 
 To run `docx2md`, you only need:
 
-*   **Python 3.x**: This project requires a Python 3 environment.
+*   **Python 3.10**: This project requires a Python 3 environment.
 
 **No external dependencies are required**; all necessary modules are part of Python's standard library.
 
@@ -53,10 +53,11 @@ You are now ready to use the converter!
 ## 🛠️ Commandline Options
 
 
-| Option | Parameter | Description                        |
-| ------ | --------- | ---------------------------------- |
-| -o     | filename  | Define output file                 |
-| --html |          | Export to HTML instead of markdown |
+| Option             | Parameter | Description                        | Default       |
+| ------------------ | --------- | ---------------------------------- | ------------- |
+| `-o`, `--out-file` | filename  | Define output file                 | input_file.md |
+| `--html`           |           | Export to HTML instead of markdown | False         |
+| `-s`, `--style`    | filename  | Use `filename` as css stylesheet   | `style.css`   |
 
 
 If no output file is given, `docx2md` defaults to the input filename with

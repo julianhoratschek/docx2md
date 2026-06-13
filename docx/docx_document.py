@@ -8,9 +8,31 @@ from .tag import Tag, ClosingState
 from .converters import TagConverter, TagMdConverter
 
 
+TAG_PATTERN : re.Pattern[str] = re.compile(
+    r"<(?P<closing>/)?" + 
+    r"(?P<tag>[\w:_\d]+)" +
+    r"(?P<attr>\s+[^/>]*?)?" +
+    r"(?P<self_closing>/)?>")
+
+ATTR_PATTERN: re.Pattern[str] = re.compile(
+    r'(?P<name>[\w\d_:]+)="(?P<value>[^"]*)"')
+
+
 class DocxDocument:
+    """
+    Loads ooxml content from a provided docx file and saves it according to
+    a provided converter as markdown or html.
+
+    :ivar __xml    : Complete xml read from docx
+    :ivar __iter   : Regex Match iterator for tags over read ooxml
+    :ivar tag      : Tag representation of current Regex Match
+    :ivar converter: TagConverter instance to use on read tags
+    """
+
     def error(self, msg: str):
+        """Prints `msg` as an error, providing the current location in xml"""
         print(f"[!] {self.tag.start}: {msg}")
+
 
     def next_tag(self) -> bool:
         """Increments the internal iterator and reads `self.tag`"""
@@ -20,16 +42,22 @@ class DocxDocument:
         except StopIteration:
             return False
 
+        # Read closing state
+
         closing_state = ClosingState.Opening
         if tag_match["closing"]:
             closing_state |= ClosingState.Closing
         if tag_match["self_closing"]:
             closing_state |= ClosingState.SelfClosing
 
+        # Read Attribute list
+
         attr_list: dict[str, str] = {
             m["name"]: m["value"]
-            for m in self.__attr_pattern.finditer(tag_match["attr"])
+            for m in ATTR_PATTERN.finditer(tag_match["attr"])
         } if tag_match["attr"] else {}
+
+        # Create tag
 
         self.tag = Tag(
             tag_match["tag"],
@@ -61,22 +89,12 @@ class DocxDocument:
         return self.__xml[begin:end]
 
 
-    def __init__(self):
-        self.__xml          : str                       = ""
-
-        self.__tag_pattern  : re.Pattern[str]           = re.compile(
-                r"<(?P<closing>/)?" + 
-                r"(?P<tag>[\w:_\d]+)" +
-                r"(?P<attr>\s+[^/>]*?)?" +
-                r"(?P<self_closing>/)?>")
-        self.__attr_pattern : re.Pattern[str]           = re.compile(
-                r'(?P<name>[\w\d_:]+)="(?P<value>[^"]*)"')
-
-        self.__iter         : Iterator[re.Match[str]]   = iter(())
-        self.tag            : Tag                       = Tag()
-
-        # self.style_stack    : list[StyledSection]       = []
-        self.converter      : TagConverter              = TagMdConverter(self)
+    def __init__(self, css_file: Path | None = None):
+        self.__xml    : str                     = ""
+        self.__iter   : Iterator[re.Match[str]] = iter(())
+        self.tag      : Tag                     = Tag()
+        self.converter: TagConverter            = TagMdConverter(self)
+        self.css_path : Path                    = css_file or Path(__file__).parent.parent / "style.css"
 
 
     def write(self, file_name: Path | str):
@@ -102,7 +120,7 @@ class DocxDocument:
             print(f"[!] File {file_name} does not seem to be DOCX")
             return
 
-        self.__iter = self.__tag_pattern.finditer(self.__xml)
+        self.__iter = TAG_PATTERN.finditer(self.__xml)
 
         while self.next_tag():
             self.converter.convert(self.tag)

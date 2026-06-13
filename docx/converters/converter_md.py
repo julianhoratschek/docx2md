@@ -6,12 +6,20 @@ from ..tag import Tag
 
 
 class TagMdConverter(TagConverter):
+    """
+    Standard converter to convert docx to md
+
+    :ivar in_header:    True if currently processing table header
+    :ivar col_count:    Counts header cols of current table
+    :ivar output   :    Text blob used as conversion result
+    """
+
     def __init__(self, owner: DocxProtocol):
         super().__init__(owner)
 
-        self.in_header: bool    = False
-        self.col_count: int     = 0
-        self.output   : str     = ""
+        self.in_header: bool = False
+        self.col_count: int  = 0
+        self.output   : str  = ""
 
 
     @override
@@ -22,8 +30,6 @@ class TagMdConverter(TagConverter):
         if tag.name in STYLE_TAGS:
             return self.convert_style_tag(tag)
 
-        # Test all other tags
-                
         match tag.name:
             # Insert paragraph after w:p element
             case "w:p" if tag.closing_state:

@@ -11,18 +11,17 @@ if __name__ == "__main__":
     parser.add_argument("file_name", type=Path)
     parser.add_argument("-o", "--out-file", type=Path)
     parser.add_argument("--html", action="store_true")
+    parser.add_argument("-s", "--style", type=Path, default=Path(__file__).parent / "style.css")
 
     args = parser.parse_args()
 
     file_name = Path(args.file_name)
     out_file = Path(args.out_file) if args.out_file else file_name
 
-    doc = DocxDocument()
+    doc = DocxDocument(css_file=args.style)
     if args.html:
         doc.converter = TagHtmlConverter(doc)
 
     doc.load(file_name)
     doc.write(out_file)
-
-
 

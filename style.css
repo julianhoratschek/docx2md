@@ -1,0 +1,100 @@
+/* ==========================================================================
+   1. SETUP FÜR DIE BILDSCHIRMANZEIGE (Browser-Vorschau)
+   ========================================================================== */
+
+/* Sorgt für einen grauen Hintergrund im Browser, damit sich die "Seiten" schön abheben */
+body {
+    background-color: #eef1f5;
+    margin: 0;
+    padding: 40px 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    
+    /* Zentriert die Seiten sauber untereinander im Browser */
+    display: block;
+    width: 100%;
+}
+
+/* Das DIN-A4 Seiten-Element */
+.page {
+    /* Exakte DIN-A4 Maße */
+    width: 210mm;
+    min-height: 297mm;
+    
+    /* Weißes "Papier" */
+    background-color: #ffffff;
+    
+    /* Zentriert die einzelne Seite im Browser und sorgt für Abstand zur nächsten */
+    margin: 0 auto 30px auto;
+    
+    /* Inkludiert Padding und Border direkt in die 210x297mm (sehr wichtig!) */
+    box-sizing: border-box;
+    
+    /* Typischer Seitenrand (ca. 2,5 cm) */
+    padding: 20mm;
+    
+    /* Ein feiner Rahmen um die Seite */
+    border: 1px solid #d3d3d3;
+    
+    /* Eleganter, weicher Schatten nach unten/außen für den "Blatt"-Effekt */
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08), 
+                0 1px 4px rgba(0, 0, 0, 0.04);
+    
+    /* Positionierungskontext für eventuelle absolute Elemente (z.B. Seitenzahlen) */
+    position: relative;
+    text-align: justify;
+    
+    /* Regelung für den Textumbruch innerhalb der Seite */
+    overflow-wrap: break-word;   /* Bricht überlange Wörter (z.B. URLs) am Seitenrand */
+    word-break: normal;
+    -webkit-hyphens: auto;       /* Automatische Silbentrennung für Safari */
+    -ms-hyphens: auto;           /* Automatische Silbentrennung für IE/Edge */
+    hyphens: auto;               /* Automatische Silbentrennung (Standard) */
+}
+
+/* Verhindert, dass Überschriften unschön alleine ganz unten auf einer Seite stehen (Orphan) */
+.page h1, .page h2, .page h3 {
+    page-break-after: avoid;
+    break-after: avoid;
+}
+
+
+/* ==========================================================================
+   2. PRINT-KONFIGURATION (Für den echten Drucker & PDF-Export)
+   ========================================================================== */
+
+@media print {
+    /* Konfiguriert die physikalische Druckseite im Druckertreiber */
+    @page {
+        size: A4;
+        /* margin: 0; /* Die Ränder steuern wir lieber über das .page-Padding */ */
+    }
+
+    /* Setzt den Browser-Hintergrund für den Druck zurück */
+    body {
+        background: none !important;
+        background-color: #ffffff !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        width: auto !important;
+    }
+
+    /* Passt die .page-Klasse so an, dass sie sich wie echtes Papier verhält */
+    .page {
+        width: 100% !important;     /* Nutzt die volle Breite des Druckbereichs */
+        height: auto !important;
+        min-height: 297mm !important; /* Erzwingt im Druck die Mindesthöhe pro Seite */
+        margin: 0 !important;       /* Entfernt die Abstände zwischen den Seiten */
+        padding: 20mm !important;   /* Behält den sauberen Textabstand bei */
+        border: none !important;    /* Entfernt den sichtbaren Rahmen auf dem Papier */
+        box-shadow: none !important;/* Entfernt den Schatten auf dem Papier */
+        background-color: #ffffff !important;
+        
+        /* Erzwingt, dass jede .page-Box auf einer neuen physischen Druckseite beginnt */
+        page-break-after: always !important;
+        break-after: page !important;
+        
+        /* Sorgt dafür, dass Hintergrundfarben im Dokument (falls vorhanden) gedruckt werden */
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+}

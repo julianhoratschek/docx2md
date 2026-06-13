@@ -5,16 +5,25 @@ from .tag import Tag
 
 
 class Styling(IntFlag):
-    NoStyle     = 0b00000
-    Italic      = 0b00001
-    Bold        = 0b00010
-    Underline   = 0b00100
-    Striked     = 0b01000
-    Highlight   = 0b10000
+    NoStyle   = 0
+    Italic    = 1
+    Bold      = 2
+    Underline = 4
+    Striked   = 8
+    Highlight = 16
 
-    def wrap(self, text: str, style_mapping: dict[Styling, tuple[str, str]]) -> str:
-        styles = STYLE_DEFAULT | style_mapping
+    def wrap(self, text: str,
+             style_mapping: dict[Styling, tuple[str, str]] | None = None) -> str:
+        """
+        Wraps `text` in styling tags according to all flags in `self`. Styling
+        tags can be provided by `style_mapping`.
 
+        :param text         :   Text to wrap in style-tags
+        :param style_mapping:   optional, maps `Styling` to opening/close tags
+        :returns            :   `text` wrapped in one or multiple tags
+        """
+
+        styles = STYLE_DEFAULT | (style_mapping or {})
         for style in self:
             b, e = styles[style]
             text = f"{b}{text}{e}"
@@ -23,24 +32,24 @@ class Styling(IntFlag):
 
 
 STYLE_DEFAULT = {
-    Styling.Bold: ("**", "**"),
-    Styling.Italic: ("_", "_"),
+    Styling.Bold     : ("**", "**"),
+    Styling.Italic   : ("_", "_"),
     Styling.Underline: ("<u>", "</u>"),
-    Styling.Striked: ("~~", "~~"),
+    Styling.Striked  : ("~~", "~~"),
     Styling.Highlight: ("==", "==") 
 }
 
 
 STYLE_TAGS = {
-    "w:b"           : Styling.Bold,
-    "w:i"           : Styling.Italic,
-    "w:u"           : Styling.Underline,
-    "w:strike"      : Styling.Striked,
-    "w:highlight"   : Styling.Highlight
+    "w:b"        : Styling.Bold,
+    "w:i"        : Styling.Italic,
+    "w:u"        : Styling.Underline,
+    "w:strike"   : Styling.Striked,
+    "w:highlight": Styling.Highlight
 }
 
 
 @dataclass
 class StyledSection:
-    tag     : Tag
-    style   : Styling   = Styling.NoStyle
+    tag  : Tag
+    style: Styling = Styling.NoStyle
