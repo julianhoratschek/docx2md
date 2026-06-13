@@ -142,9 +142,6 @@ class TagHtmlConverter(TagConverter):
                     self.style.wrap(
                         self.owner.get_content(), self.style_mapping))
 
-            # TODO: ul levels
-
-
             case "w:tbl":
                 if tag.closing_state:
                     self.__pop_child("table")
@@ -173,6 +170,10 @@ class TagHtmlConverter(TagConverter):
 
 
     def __print_tag(self, tag: HtmlTag | HtmlContent) -> str:
+        """
+        Tail-recursive function to print all tags and their children
+        """
+
         match tag:
             case HtmlContent():
                 return tag.content
@@ -185,6 +186,7 @@ class TagHtmlConverter(TagConverter):
         <{tag.name}>
             {"".join(self.__print_tag(child) for child in tag.children)}
         </{tag.name}>"""
+
 
     @override
     def get_result(self) -> str:
