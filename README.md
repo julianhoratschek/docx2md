@@ -40,10 +40,9 @@ Since `docx2md` is a script, not a package, installation is straightforward:
 
     ```
 
-3.  **Ensure Python is installed**:
-    Verify your Python version (3.x is required):
+3.  **Use script**:
     ```bash
-    python --version
+    python docx2md.py your-filename.docx
 
     ```
 
@@ -56,8 +55,8 @@ You are now ready to use the converter!
 | Option             | Parameter | Description                        | Default       |
 | ------------------ | --------- | ---------------------------------- | ------------- |
 | `-o`, `--out-file` | filename  | Define output file                 | input_file.md |
-| `--html`           |           | Export to HTML instead of markdown | False         |
 | `-s`, `--style`    | filename  | Use `filename` as css stylesheet   | `style.css`   |
+| `--html`           |           | Export to HTML instead of markdown | False         |
 
 
 If no output file is given, `docx2md` defaults to the input filename with
@@ -78,10 +77,10 @@ python docx2md.py -o output.md input.docx
 
 ```
 
-To convert a `.docx` file to HTML:
+To convert a `.docx` file to HTML, use custom css:
 
 ```bash
-python docx2md.py --html -o output.html input.docx
+python docx2md.py --html --style ~/styles/my_style.css -o output.html input.docx
 
 ```
 

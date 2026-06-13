@@ -45,11 +45,48 @@ class TagHtmlConverter(TagConverter):
         self.__html_head.children.append(content)
 
 
+    def __get_list_index(self) -> int:
+        """
+        Returns the indentation index of the current list element. If the current
+        tag is not a list element, returns 0.
+        """
+
+        if not self.owner.next_tag() \
+           or self.owner.tag.name != "w:pPr":
+            return 0
+
+        list_idx = 0
+        while self.owner.next_tag():
+            tag = self.owner.tag
+
+            # Still process style tags
+            if tag.name in STYLE_TAGS:
+                self.convert_style_tag(tag)
+                continue
+
+            match tag.name:
+                case "w:pPr":
+                    break
+
+                case "w:numPr":
+                    list_idx = list_idx or 1
+
+                case "w:ilvl":
+                    try:
+                        list_idx = int(tag.attr["w:val"]) + 1
+                    except ValueError:
+                        self.owner.error("Expected numerical indent value for list")
+                    except KeyError:
+                        self.owner.error("Expected w:val in w:ilvl")
+
+        return list_idx
+
+
     def __init__(self, owner: DocxProtocol):
         super().__init__(owner)
 
         self.__in_header  : bool    = False
-        self.__in_list    : bool    = False
+        self.__list_idx   : int     = 0
         self.__html_tree  : HtmlTag = HtmlTag("body", [], None)
         self.__html_head  : HtmlTag = self.__html_tree
 
@@ -61,25 +98,6 @@ class TagHtmlConverter(TagConverter):
             Styling.Striked     : ("<s>", "</s>"),
             Styling.Highlight   : ("<mark>", "</mark>") 
         }
-
-
-    def __is_list(self) -> bool:
-        if not self.owner.next_tag() \
-           or self.owner.tag.name != "w:pPr":
-            return False
-
-        while self.owner.next_tag() \
-              and (tag := self.owner.tag).name != "w:numPr":
-
-            # We found the end of w:pPr without encountering w:numPr
-            if tag.name == "w:pPr" and tag.closing_state:
-                return False
-
-            # Still process style tags
-            if tag.name in STYLE_TAGS:
-                self.convert_style_tag(tag)
-
-        return True
 
 
     @override
@@ -94,21 +112,25 @@ class TagHtmlConverter(TagConverter):
             # Insert paragraph or unordered list
             case "w:p":
                 if not tag.closing_state:
-                    if self.__is_list():
-                        if not self.__in_list:
+                    if (list_idx := self.__get_list_index()):
+                        while self.__list_idx < list_idx:
                             self.__push_child("ul")
-                            self.__in_list = True
+                            self.__list_idx += 1
+
+                        while self.__list_idx > list_idx:
+                            self.__pop_child("ul")
+                            self.__list_idx -= 1
 
                         self.__push_child("li")
-                        return
 
-                    if self.__in_list:
-                        self.__in_list = False
-                        self.__pop_child("ul")
+                    else:
+                        if self.__list_idx:
+                            while self.__list_idx:
+                                self.__pop_child("ul")
+                                self.__list_idx -= 1
+                        self.__push_child("p")
 
-                    self.__push_child("p")
-
-                elif self.__in_list:
+                elif self.__list_idx:
                     self.__pop_child("li")
 
                 else:
@@ -122,14 +144,6 @@ class TagHtmlConverter(TagConverter):
 
             # TODO: ul levels
 
-            # case "w:ilvl":
-            #     try:
-            #         lvl = int(tag.attr["w:val"])
-            #         return "\t" * lvl
-            #     except ValueError:
-            #         self.owner.error("Expected numerical indent value for list")
-            #     except KeyError:
-            #         self.owner.error("Expected w:val in w:ilvl")
 
             case "w:tbl":
                 if tag.closing_state:
