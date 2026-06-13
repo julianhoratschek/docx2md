@@ -1,61 +1,94 @@
 # DOCX to Markdown Converter
 
-(Diese README wurde mittels KI erstellt)
+A lightweight, pure Python script designed to convert Microsoft Word (`.docx`) files directly into clean GitHub-Flavored Markdown (`.md`).
 
-Ein leichtgewichtiges, reines Python-Skript, das `.docx`-Dateien (Microsoft Word) direkt ausliest und deren XML-Struktur (`word/document.xml`) in sauberes GitHub-Flavored Markdown (`.md`) konvertiert. 
+This project distinguishes itself by directly parsing the internal XML structure (specifically `word/document.xml`) of `.docx` files without relying on heavy third-party libraries like `python-docx` or `pandoc`. Instead, it leverages Python's built-in modules such as `zipfile` and `re` for efficient and dependency-free conversion.
 
-Das Skript verzichtet komplett auf schwere Drittanbieter-Bibliotheken (wie `python-docx` oder `pandoc`) und nutzt stattdessen Pythons integrierte Module wie `zipfile` und `re`.
 
-## ✨ Features
+## ✨ Key Features & Benefits
 
-* **Direktes Entpacken:** Liest die XML-Inhalte direkt aus dem ZIP-Archiv der `.docx`-Datei, ohne temporäre Dateien auf der Festplatte abzulegen.
-* **Textformatierung:** Konvertiert grundlegende Textstile nahtlos in Markdown:
-  * **Fett** (`**text**`)
-  * *Kursiv* (`*text*`)
-  * Unterstrichen (`<u>text</u>`)
-  * ~~Durchgestrichen~~ (`~~text~~`)
-  * ==Markiert/Highlighted== (`==text==`)
-* **Struktur-Elemente:**
-  * Absätze und Zeilenumbrüche (`<w:p>`, `<w:br>`)
-  * Listen-Einrückungen mit Tabulatoren basierend auf der XML-Hierarchie
-  * Tabellen-Konvertierung inklusive automatischer Header-Erkennung und Trennlinien
+*   **Lightweight & Dependency-Free**: Utilizes only standard Python libraries (`zipfile`, `re`), avoiding external dependencies and ensuring a minimal footprint.
+*   **Direct DOCX Parsing**: Directly reads and interprets the XML structure within `.docx` files for precise control over the conversion process.
+*   **GitHub-Flavored Markdown Output**: Generates clean, readable Markdown (`.md`) optimized for rendering on platforms like GitHub.
+*   **Pure Python Implementation**: Entirely implemented in Python, ensuring broad compatibility across various operating systems.
+*   **HTML Conversion Capability**: Although primarily focused on Markdown, the modular architecture (featuring `TagHtmlConverter`) supports conversion to HTML as well.
+*   **Foundation for Control**: Provides a robust foundation for fine-grained control over document parsing, styling, and output formatting.
 
-## 🚀 Installation & Voraussetzungen
 
-Da das Skript ausschließlich auf der Python-Standardbibliothek basiert, sind **keine zusätzlichen Installationen (pip)** notwendig.
+## 🚀 Prerequisites & Dependencies
 
-* **Voraussetzung:** Python 3.10 oder neuer (wegen moderner Features wie `match-case` und erweiterten Type-Hints).
+To run `docx2md`, you only need:
 
-Einfach das Skript klonen oder herunterladen:
+*   **Python 3.x**: This project requires a Python 3 environment.
+
+**No external dependencies are required**; all necessary modules are part of Python's standard library.
+
+
+## ⚙️ Installation & Setup Instructions
+
+Since `docx2md` is a script, not a package, installation is straightforward:
+
+1.  **Clone the repository**:
+    ```bash
+    git clone https://github.com/julianhoratschek/docx2md.git
+
+    ```
+
+2.  **Navigate to the project directory**:
+    ```bash
+    cd docx2md
+
+    ```
+
+3.  **Ensure Python is installed**:
+    Verify your Python version (3.x is required):
+    ```bash
+    python --version
+
+    ```
+
+You are now ready to use the converter!
+
+
+## 🛠️ Commandline Options
+
+
+| Option | Parameter | Description                        |
+| ------ | --------- | ---------------------------------- |
+| -o     | filename  | Define output file                 |
+| --html |          | Export to HTML instead of markdown |
+
+
+If no output file is given, `docx2md` defaults to the input filename with
+changed extension (`.md` or `.html`)
+
+
+## 💡 Usage Examples
+
+The primary entry point for `docx2md` is the `docx2md.py` script.
+
+
+### Command-Line Usage
+
+To convert a `.docx` file to Markdown:
+
 ```bash
-git clone [https://github.com/DEIN-BENUTZERNAME/REPO-NAME.git](https://github.com/DEIN-BENUTZERNAME/REPO-NAME.git)
-cd REPO-NAME
+python docx2md.py -o output.md input.docx
 
 ```
 
-## 💻 Nutzung (CLI)
-
-Das Skript wird direkt über das Terminal ausgeführt. Du kannst entweder nur die Quelldatei angeben (die Ausgabedatei erhält dann denselben Namen mit `.md`-Endung) oder einen expliziten Ausgabenamen definieren.
-
-### Syntax
+To convert a `.docx` file to HTML:
 
 ```bash
-python docx2md.py <pfad_zur_datei.docx> [ziel_datei.md]
+python docx2md.py --html -o output.html input.docx
 
 ```
 
-### Beispiele
+## 📄 License Information
 
-**Automatische Benennung (erzeugt `Dokument.md`):**
+This project currently **does not have an explicit license specified**. Users are advised to contact the owner, `julianhoratschek`, for licensing terms for any use beyond personal evaluation.
 
-```bash
-python docx2md.py Dokument.docx
 
-```
+## 🙏 Acknowledgments
 
-**Explizite Benennung:**
-
-```bash
-python docx2md.py Dokument.docx /pfad/zu/output.md
-
-```
+This README was generated with the help of AI.
