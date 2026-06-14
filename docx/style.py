@@ -31,6 +31,7 @@ class Styling(IntFlag):
         return text
 
 
+# Default for Styling.wrap
 STYLE_DEFAULT = {
     Styling.Bold     : ("**", "**"),
     Styling.Italic   : ("_", "_"),

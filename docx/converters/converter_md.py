@@ -1,6 +1,6 @@
 from typing import override
 
-from .converter import TagConverter, DocxProtocol
+from .converter import TagConverter, DocxProtocol, pPrElement
 from ..style import STYLE_TAGS
 from ..tag import Tag
 
@@ -17,9 +17,10 @@ class TagMdConverter(TagConverter):
     def __init__(self, owner: DocxProtocol):
         super().__init__(owner)
 
-        self.in_header: bool = False
-        self.col_count: int  = 0
-        self.output   : str  = ""
+        self.in_header: bool       = False
+        self.col_count: int        = 0
+        self.output   : str        = ""
+        self.ppr      : pPrElement = pPrElement()
 
 
     @override
@@ -31,9 +32,20 @@ class TagMdConverter(TagConverter):
             return self.convert_style_tag(tag)
 
         match tag.name:
-            # Insert paragraph after w:p element
             case "w:p" if tag.closing_state:
-                self.output += "\n\n"
+                self.output += "\n"
+                # p is not list a list
+                if not self.ppr.list_level:
+                    self.output += "\n"
+
+            case "w:pPr" if not tag.closing_state:
+                self.ppr = self.process_ppr()
+
+                if self.ppr.list_level:
+                    self.output += ("\t" * (self.ppr.list_level - 1)) + "- "
+
+                if self.ppr.heading_level:
+                    self.output += ('#' * self.ppr.heading_level) + ' '
 
             # Insert line break
             case "w:br":
@@ -43,19 +55,6 @@ class TagMdConverter(TagConverter):
             case "w:t" if not tag.closing_state:
                 self.output += self.style.wrap(
                     self.owner.get_content(), self.style_mapping)
-
-            # Insert list bullets
-            case "w:listPr" | "w:numPr" if tag.closing_state:
-                self.output += "- "
-
-            case "w:ilvl":
-                try:
-                    lvl = int(tag.attr["w:val"])
-                    self.output += "\t" * lvl
-                except ValueError:
-                    self.owner.error("Expected numerical indent value for list")
-                except KeyError:
-                    self.owner.error("Expected w:val in w:ilvl")
 
             case "w:tblHeader":
                 self.in_header = True

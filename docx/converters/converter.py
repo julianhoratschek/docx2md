@@ -1,8 +1,13 @@
 from typing import Protocol
 from pathlib import Path
+from dataclasses import dataclass
+import re
 
 from ..style import StyledSection, Styling, STYLE_DEFAULT, STYLE_TAGS
 from ..tag import Tag
+
+
+HEADING_PATTERN = re.compile(r"heading (\d+)")
 
 
 class DocxProtocol(Protocol):
@@ -15,6 +20,15 @@ class DocxProtocol(Protocol):
 
     @property
     def css_path(self) -> Path: ...
+
+
+@dataclass
+class pPrElement:
+    list_level   : int = 0
+    heading_level: int = 0
+
+    def empty(self) -> bool:
+        return self.list_level == 0 and self.heading_level == 0
 
 
 class TagConverter:
@@ -42,6 +56,57 @@ class TagConverter:
         result = Styling.NoStyle
         for sect in self.style_stack:
             result |= sect.style
+        return result
+
+
+    def process_ppr(self) -> pPrElement:
+        """
+        Processes a w:pPr element and returns `pPrElement`. Will find style
+        indicating tags and add them to the current StyledSection, will distinguish
+        between lists and headings and get their level.
+        """
+
+        result = pPrElement()
+
+       # if not self.owner.next_tag() \
+        #    or self.owner.tag.name != "w:pPr":
+        #     return result
+        
+        while self.owner.next_tag():
+            tag = self.owner.tag
+
+            # Still process style tags
+            if tag.name in STYLE_TAGS:
+                self.convert_style_tag(tag)
+                continue
+
+            match tag.name:
+                case "w:pPr":
+                    if not tag.closing_state:
+                        self.owner.error("Expected closing w:pPr")
+                    break
+
+                case "w:numPr":
+                    result.list_level = result.list_level or 1
+
+                case "w:ilvl":
+                    try:
+                        result.list_level = int(tag.attr["w:val"]) + 1
+                    except ValueError:
+                        self.owner.error("Expected numerical indent value for list")
+                    except KeyError:
+                        self.owner.error("Expected w:val in w:ilvl")
+
+                case "w:pStyle":
+                    try:
+                        style = tag.attr["w:val"].lower()
+                        if (m := HEADING_PATTERN.match(style)):
+                            result.heading_level = int(m[1])
+                    except ValueError:
+                        self.owner.error("Expected numerical indent value for heading")
+                    except KeyError:
+                        self.owner.error("Expected w:val in w:pStyle")
+
         return result
 
 

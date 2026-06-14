@@ -29,6 +29,14 @@ class DocxDocument:
     :ivar converter: TagConverter instance to use on read tags
     """
 
+    def __init__(self, css_file: Path | None = None):
+        self.__xml    : str                     = ""
+        self.__iter   : Iterator[re.Match[str]] = iter(())
+        self.tag      : Tag                     = Tag()
+        self.converter: TagConverter            = TagMdConverter(self)
+        self.css_path : Path                    = css_file or Path(__file__).parent.parent / "style.css"
+
+
     def error(self, msg: str):
         """Prints `msg` as an error, providing the current location in xml"""
         print(f"[!] {self.tag.start}: {msg}")
@@ -89,15 +97,9 @@ class DocxDocument:
         return self.__xml[begin:end]
 
 
-    def __init__(self, css_file: Path | None = None):
-        self.__xml    : str                     = ""
-        self.__iter   : Iterator[re.Match[str]] = iter(())
-        self.tag      : Tag                     = Tag()
-        self.converter: TagConverter            = TagMdConverter(self)
-        self.css_path : Path                    = css_file or Path(__file__).parent.parent / "style.css"
-
-
     def write(self, file_name: Path | str):
+        """Save converter-output to a file"""
+
         with Path(file_name)\
                 .with_suffix(self.converter.extension)\
                 .open("w+") as fl:

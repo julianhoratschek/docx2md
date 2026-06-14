@@ -21,6 +21,7 @@ class HtmlContent:
 
 class TagHtmlConverter(TagConverter):
     def __push_child(self, name: str):
+        """Add a child node to `html_head` and set head to child"""
         tag = HtmlTag(name, [], self.__html_head)
 
         self.__html_head.children.append(tag)
@@ -28,6 +29,7 @@ class TagHtmlConverter(TagConverter):
 
 
     def __pop_child(self, name: str):
+        """Keeps child node! Sets `html_head` to parent"""
         if (parent := self.__html_head.parent) is None:
             return self.owner.error("Cannot ascend over root node")
 
@@ -37,49 +39,19 @@ class TagHtmlConverter(TagConverter):
         self.__html_head = parent
 
 
+    # def __remove_current(self, name: str):
+    #     """Removes `html_head` from current tree and sets `html_head` to parent"""
+    #     self.__pop_child(name)
+    #     self.__html_head.children.pop()
+
+
     def __push_content(self, text: str):
+        """Pushes text as child to `html_head`, keeps `html_head` at current node"""
         if (parent := self.__html_head.parent) is None:
             return self.owner.error("Cannot public content under root node")
 
         content = HtmlContent(text, parent)
         self.__html_head.children.append(content)
-
-
-    def __get_list_index(self) -> int:
-        """
-        Returns the indentation index of the current list element. If the current
-        tag is not a list element, returns 0.
-        """
-
-        if not self.owner.next_tag() \
-           or self.owner.tag.name != "w:pPr":
-            return 0
-
-        list_idx = 0
-        while self.owner.next_tag():
-            tag = self.owner.tag
-
-            # Still process style tags
-            if tag.name in STYLE_TAGS:
-                self.convert_style_tag(tag)
-                continue
-
-            match tag.name:
-                case "w:pPr":
-                    break
-
-                case "w:numPr":
-                    list_idx = list_idx or 1
-
-                case "w:ilvl":
-                    try:
-                        list_idx = int(tag.attr["w:val"]) + 1
-                    except ValueError:
-                        self.owner.error("Expected numerical indent value for list")
-                    except KeyError:
-                        self.owner.error("Expected w:val in w:ilvl")
-
-        return list_idx
 
 
     def __init__(self, owner: DocxProtocol):
@@ -109,32 +81,52 @@ class TagHtmlConverter(TagConverter):
             return self.convert_style_tag(tag)
 
         match tag.name:
-            # Insert paragraph or unordered list
-            case "w:p":
-                if not tag.closing_state:
-                    if (list_idx := self.__get_list_index()):
-                        while self.__list_idx < list_idx:
-                            self.__push_child("ul")
-                            self.__list_idx += 1
+            # Opens a paragraph, could be changed after processing w:pPr
+            case "w:p" if not tag.closing_state:
+                # Each w:p should have a pPr, where we insert the correct
+                # paragraph type (p, li, h)
+                # self.__push_child("p")
+                pass
 
-                        while self.__list_idx > list_idx:
-                            self.__pop_child("ul")
-                            self.__list_idx -= 1
-
-                        self.__push_child("li")
-
-                    else:
-                        if self.__list_idx:
-                            while self.__list_idx:
-                                self.__pop_child("ul")
-                                self.__list_idx -= 1
-                        self.__push_child("p")
-
-                elif self.__list_idx:
-                    self.__pop_child("li")
-
+            # Closes lists, paragraphs or headings
+            case "w:p" if tag.closing_state:
+                name = self.__html_head.name
+                if name in ("li", "p") or name[0] == "h":
+                    self.__pop_child(name)
                 else:
-                    self.__pop_child("p")
+                    self.owner.error("Unexpected w:p closing tag")
+
+            # Read p properties and change last p if necessary
+            case "w:pPr" if not tag.closing_state:
+                # We did not insert a paragraph when encountering w:p
+                # self.__remove_current("p")
+                ppr = self.process_ppr()
+
+                # Current paragraph is a list element
+                if ppr.list_level:
+                    while self.__list_idx < ppr.list_level:
+                        self.__push_child("ul")
+                        self.__list_idx += 1
+
+                    while self.__list_idx > ppr.list_level:
+                        self.__pop_child("ul")
+                        self.__list_idx -= 1
+
+                    self.__push_child("li")
+                    return
+
+                # Current paragraph is no list element (anymore)
+                while self.__list_idx:
+                    self.__pop_child("ul")
+                    self.__list_idx -= 1
+
+                # Current paragraph is heading
+                if ppr.heading_level:
+                    self.__push_child(f"h{ppr.heading_level % 6}")
+                    return
+                
+                # Nothing changed: current paragraph stays paragraph
+                self.__push_child("p")
 
             # Insert content at beginning of w:t
             case "w:t" if not tag.closing_state:
@@ -170,10 +162,7 @@ class TagHtmlConverter(TagConverter):
 
 
     def __print_tag(self, tag: HtmlTag | HtmlContent) -> str:
-        """
-        Tail-recursive function to print all tags and their children
-        """
-
+        """ Tail-recursive function to print all tags and their children """
         match tag:
             case HtmlContent():
                 return tag.content
